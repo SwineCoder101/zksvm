@@ -23,7 +23,7 @@ pub async fn settle_state(proof: Hash) -> Result<String> {
     // let payer = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json")
     //     .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?;
 
-    let payer = signer::keypair::read_keypair_file("/home/jvan/svm/zksvm/rollup_core/src/settler-keypair.json")
+    let payer = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json")
         .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?;
 
     // Create a dummy system transfer instruction (transfers 0 lamports to self)

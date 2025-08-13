@@ -14,7 +14,7 @@ anyhow = "1.0"
 serde = { version = "1.0.209", features = ["derive"] }
 serde_json = "1.0.127"
 bincode = "1.3.3"
-rollup_core = { path = "/home/jvan/zksvm/rollup_core" }
+rollup_core = { path = "../rollup_core" }
 
 [dev-dependencies]
 tokio-test = "0.4"
