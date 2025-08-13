@@ -5,13 +5,14 @@ use async_channel;
 use crossbeam;
 use frontend::FrontendMessage;
 use rollupdb::{RollupDB, RollupDBMessage};
-use solana_sdk::transaction::Transaction;
+use solana_sdk::{account::AccountSharedData, pubkey::Pubkey, transaction::Transaction};
 use tokio::{join, runtime::Builder};
 mod frontend;
 mod processor;
 mod rollupdb;
 mod sequencer;
 mod settle;
+mod loader;
 
 // #[actix_web::main]
 fn main() {
@@ -21,7 +22,8 @@ fn main() {
 
     let (sequencer_sender, sequencer_receiver) = crossbeam::channel::unbounded::<Transaction>();
     let (rollupdb_sender, rollupdb_receiver) = crossbeam::channel::unbounded::<RollupDBMessage>();
-
+    pub type PubkeyAccountSharedData = Option<Vec<(Pubkey, AccountSharedData)>>;
+    let (account_sender, account_receiver) = async_channel::unbounded::<PubkeyAccountSharedData>();
     // let (sequencer_sender, sequencer_receiver) = async_channel::bounded::<Transaction>(100); // Channel for communication between frontend and sequencer
     // let (rollupdb_sender, rollupdb_receiver) = async_channel::unbounded::<RollupDBMessage>(); // Channel for communication between sequencer and accountsdb
     let (frontend_sender, frontend_receiver) = async_channel::unbounded::<FrontendMessage>(); // Channel for communication between data availability layer and frontend
@@ -34,8 +36,8 @@ fn main() {
     //     .unwrap();
     let db_sender2 = rollupdb_sender.clone();
     let fe_2 = frontend_sender.clone();
-
-    let _asdserver_thread = thread::spawn(|| {
+    let acc_sender = account_sender.clone();
+    let asdserver_thread = thread::spawn(|| {
         let rt = Builder::new_multi_thread()
             .enable_all()
             .worker_threads(4)
@@ -44,11 +46,11 @@ fn main() {
 
         rt.block_on(async {
             let seq_handle = tokio::spawn(async move {
-                sequencer::run(sequencer_receiver, db_sender2).unwrap();
+                sequencer::run(sequencer_receiver, db_sender2,account_receiver).await.ok().unwrap();
             });
 
             let db_handle = tokio::spawn(async move {
-                RollupDB::run(rollupdb_receiver, fe_2).await;
+                RollupDB::run(rollupdb_receiver, fe_2,acc_sender).await;
             });
 
             let _ = join!(seq_handle, db_handle);
@@ -105,7 +107,7 @@ fn main() {
         });
     });
     server_thread.join().unwrap();
-
+    asdserver_thread.join().unwrap();
     // rt.shutdown_timeout(std::time::Duration::from_secs(20));
 
     // Ok(())

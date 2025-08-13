@@ -29,8 +29,8 @@ pub struct GetTransaction {
 // message format used to receive transactions from clients
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RollupTransaction {
-    sender: String,
-    sol_transaction: Transaction,
+    pub sender: String,
+    pub sol_transaction: Transaction,
 }
 
 pub async fn submit_transaction(
@@ -70,6 +70,7 @@ pub async fn get_transaction(
                 Hash::from_str(&body.get_tx).map_err(|_| error::ErrorBadRequest("Invalid hash"))?,
             ),
             add_settle_proof: None,
+            add_new_data:None
         })
         .unwrap();
     log::info!("Sending to rollupdb worked getrequest");

@@ -5,8 +5,8 @@ use solana_sdk::{native_token::LAMPORTS_PER_SOL, signer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let keypair = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json").unwrap();
-    let keypair2 = signer::keypair::read_keypair_file("/home/dev/.solana/mykey_1.json").unwrap();
+    let keypair = signer::keypair::read_keypair_file("/home/jvan/.solana/testkey.json").unwrap();
+    let keypair2 = signer::keypair::read_keypair_file("/home/jvan/.solana/mykey_1.json").unwrap();
     let rpc_client = RpcClient::new("https://api.devnet.solana.com".into());
 
     // Get recent blockhash from Solana
@@ -31,10 +31,13 @@ async fn main() -> Result<()> {
     let sig_hash_b58 = calculate_signature_hash(&tx_sig);
     println!("Sig: {}", tx_sig);
     println!("Sig_hash: {:#?}", sig_hash_b58);
-
-    println!("Getting transaction...");
-    let tx_resp = rollup_client.get_transaction(&sig_hash_b58).await?;
-    println!("{tx_resp:#?}");
+    
+    
+    //comment this while running the client multiple times 
+    
+    // println!("Getting transaction...");
+    // let tx_resp = rollup_client.get_transaction(&sig_hash_b58).await?;
+    // println!("{tx_resp:#?}");
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use reqwest::Client;
-use rollup_core::RollupTransaction;
+
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     hash::Hash,
@@ -10,6 +10,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::collections::HashMap;
+use rollup_core::frontend::RollupTransaction;
 
 /// Create a Solana transaction for testing/demonstration
 pub fn create_solana_transaction(

@@ -3,7 +3,7 @@ use rollup_client::{calculate_signature_hash, create_solana_transaction, RollupC
 use solana_sdk::{
     hash::Hash,
     native_token::LAMPORTS_PER_SOL,
-    signature::{Keypair, Signer},
+    signature::{Keypair, Signer}, signer,
 };
 use std::{
     process::{Child, Command},
@@ -98,8 +98,11 @@ async fn test_complete_rollup_flow() -> Result<()> {
 
     // Create test transaction
     println!("\n2. Creating test transaction...");
-    let sender_keypair = create_test_keypair();
-    let receiver_keypair = create_test_keypair();
+    // let sender_keypair = create_test_keypair();
+    // let receiver_keypair = create_test_keypair();
+    let sender_keypair = signer::keypair::read_keypair_file("/home/jvan/.solana/testkey.json").unwrap();
+    let receiver_keypair = signer::keypair::read_keypair_file("/home/jvan/.solana/mykey_1.json").unwrap();
+    
     let amount = 1 * LAMPORTS_PER_SOL;
 
     // Use a mock recent blockhash for testing
@@ -193,8 +196,11 @@ async fn test_svm_execution_flow() -> Result<()> {
 
     // Create a simple transfer transaction
     println!("\n1. Creating transfer transaction for SVM execution...");
-    let sender = create_test_keypair();
-    let receiver = create_test_keypair();
+    // let sender = create_test_keypair();
+    // let receiver = create_test_keypair();
+    let sender = signer::keypair::read_keypair_file("/home/jvan/.solana/testkey.json").unwrap();
+    let receiver = signer::keypair::read_keypair_file("/home/jvan/.solana/mykey_1.json").unwrap();
+    
     let amount = 5000; // 5000 lamports
 
     let transaction = create_solana_transaction(&sender, &receiver, amount, Hash::default());
@@ -276,8 +282,11 @@ async fn test_rollup_client_functionality() -> Result<()> {
 
     // Test transaction creation utility
     println!("\n2. Testing transaction creation utility...");
-    let keypair1 = create_test_keypair();
-    let keypair2 = create_test_keypair();
+    // let keypair1 = create_test_keypair();
+    // let keypair2 = create_test_keypair();
+    let keypair1 = signer::keypair::read_keypair_file("/home/jvan/.solana/testkey.json").unwrap();
+    let keypair2 = signer::keypair::read_keypair_file("/home/jvan/.solana/mykey_1.json").unwrap();
+    
     let tx = create_solana_transaction(&keypair1, &keypair2, 1000, Hash::default());
     assert_eq!(tx.signatures.len(), 1);
     assert_eq!(tx.message.instructions.len(), 1);

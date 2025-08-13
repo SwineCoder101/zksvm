@@ -5,7 +5,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
-    signature::Signer,
+    signature::{Keypair, Signer},
     signer,
     system_program,
     transaction::Transaction,
@@ -20,7 +20,10 @@ pub async fn settle_state(proof: Hash) -> Result<String> {
     );
 
     // Load keypair from the specified path
-    let payer = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json")
+    // let payer = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json")
+    //     .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?;
+
+    let payer = signer::keypair::read_keypair_file("/home/jvan/svm/zksvm/rollup_core/src/settler-keypair.json")
         .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?;
 
     // Create a dummy system transfer instruction (transfers 0 lamports to self)
