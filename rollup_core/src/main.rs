@@ -5,7 +5,7 @@ use async_channel;
 use crossbeam;
 use frontend::FrontendMessage;
 use rollupdb::{RollupDB, RollupDBMessage};
-use solana_sdk::{account::AccountSharedData, pubkey::Pubkey, transaction::Transaction};
+use solana_sdk::{account::AccountSharedData, hash::Hash, pubkey::Pubkey, transaction::Transaction};
 use tokio::{join, runtime::Builder};
 mod frontend;
 mod processor;
@@ -13,6 +13,10 @@ mod rollupdb;
 mod sequencer;
 mod settle;
 mod loader;
+
+pub struct SettlementJob {
+    pub proof_hash: Hash,
+}
 
 // #[actix_web::main]
 fn main() {
@@ -28,6 +32,28 @@ fn main() {
     // let (rollupdb_sender, rollupdb_receiver) = async_channel::unbounded::<RollupDBMessage>(); // Channel for communication between sequencer and accountsdb
     let (frontend_sender, frontend_receiver) = async_channel::unbounded::<FrontendMessage>(); // Channel for communication between data availability layer and frontend
                                                                                               // std::thread::spawn(sequencer::run(sequencer_receiver, rollupdb_sender.clone()));
+    let (settler_sender,settler_reciever) = crossbeam::channel::unbounded::<SettlementJob>();
+
+
+
+    let settler_handle = thread::spawn(move || {
+        log::info!("Settlement thread started.");
+        // The settler thread has its own dedicated Tokio runtime.
+        let rt = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async move {
+            while let Ok(job) = settler_reciever.recv() {
+                log::info!("Settler received a new job. Submitting to L1...");
+                match settle::settle_state(job.proof_hash).await {
+                    Ok(hash) => log::info!("Settlement successful. Signature: {}", hash),
+                    Err(e) => log::error!("Settlement failed: {}", e),
+                }
+            }
+        });
+    });
 
     // let rt = Builder::new()
     //     .threaded_scheduler()
@@ -46,7 +72,7 @@ fn main() {
 
         rt.block_on(async {
             let seq_handle = tokio::spawn(async move {
-                sequencer::run(sequencer_receiver, db_sender2,account_receiver).await.ok().unwrap();
+                sequencer::run(sequencer_receiver, db_sender2,account_receiver,settler_sender).await.ok().unwrap();
             });
 
             let db_handle = tokio::spawn(async move {
@@ -108,6 +134,7 @@ fn main() {
     });
     server_thread.join().unwrap();
     asdserver_thread.join().unwrap();
+    settler_handle.join().unwrap();
     // rt.shutdown_timeout(std::time::Duration::from_secs(20));
 
     // Ok(())

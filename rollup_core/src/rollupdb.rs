@@ -78,7 +78,6 @@ impl RollupDB {
                 log::info!("State update complete. Locked: {}, Unlocked: {}.", db.locked_accounts.len(), db.accounts_db.len());
 
             } else if let Some(get_this_hash_tx) = message.frontend_get_tx {
-                // This part is also correct.
                 log::info!("Received request from frontend for tx hash: {}", get_this_hash_tx);
                 if let Some(req_tx) = db.transactions.get(&get_this_hash_tx) {
                     log::info!("✅ Found transaction for hash: {}", get_this_hash_tx);

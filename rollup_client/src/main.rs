@@ -1,12 +1,20 @@
 use anyhow::Result;
 use rollup_client::{calculate_signature_hash, create_solana_transaction, RollupClient};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{native_token::LAMPORTS_PER_SOL, signer};
+use solana_sdk::{native_token::LAMPORTS_PER_SOL, signer,signature::Keypair};
+use dotenvy::dotenv;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let keypair = signer::keypair::read_keypair_file("/home/dev/.solana/testkey.json").unwrap();
-    let keypair2 = signer::keypair::read_keypair_file("/home/dev/.solana/mykey_1.json").unwrap();
+    dotenv().ok();
+    let path1 = std::env::var("KEYPAIR1")?;
+    let path2 = std::env::var("KEYPAIR2")?;
+
+    let keypair = signer::keypair::read_keypair_file(path1).unwrap();
+    let keypair2 = signer::keypair::read_keypair_file(path2).unwrap();
+
+
     let rpc_client = RpcClient::new("https://api.devnet.solana.com".into());
 
     // Get recent blockhash from Solana
@@ -34,7 +42,6 @@ async fn main() -> Result<()> {
     
     
     //comment this while running the client multiple times 
-
     // println!("Getting transaction...");
     // let tx_resp = rollup_client.get_transaction(&sig_hash_b58).await?;
     // println!("{tx_resp:#?}");
