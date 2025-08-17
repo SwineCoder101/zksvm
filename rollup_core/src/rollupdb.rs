@@ -4,23 +4,23 @@ use solana_sdk::{
     account::AccountSharedData, keccak::Hash, pubkey::Pubkey, transaction::Transaction,
 };
 
+use crate::frontend::FrontendMessage;
 use crossbeam::channel::{Receiver as CBReceiver, Sender as CBSender};
+use solana_client::rpc_client::RpcClient;
 use std::{
     collections::{HashMap, HashSet},
     default,
 };
-use solana_client::rpc_client::RpcClient;
-use crate::frontend::FrontendMessage;
 
 pub struct RollupDBMessage {
     pub lock_accounts: Option<Vec<Pubkey>>,
     pub add_processed_transaction: Option<Transaction>,
     pub frontend_get_tx: Option<Hash>,
     pub add_settle_proof: Option<String>,
-    pub add_new_data: Option<Vec<(Pubkey,AccountSharedData)>>,
+    pub add_new_data: Option<Vec<(Pubkey, AccountSharedData)>>,
 }
 
-#[derive(Debug, Default,)]
+#[derive(Debug, Default)]
 pub struct RollupDB {
     accounts_db: HashMap<Pubkey, AccountSharedData>,
     locked_accounts: HashMap<Pubkey, AccountSharedData>,
@@ -39,7 +39,10 @@ impl RollupDB {
             log::info!("RollupDB received a message");
 
             if let Some(accounts_to_lock) = message.lock_accounts {
-                log::info!("DB: Received request to lock and fetch {} accounts.", accounts_to_lock.len());
+                log::info!(
+                    "DB: Received request to lock and fetch {} accounts.",
+                    accounts_to_lock.len()
+                );
                 let mut fetched_accounts_data: Vec<(Pubkey, AccountSharedData)> = Vec::new();
                 let rpc_client = RpcClient::new("https://api.devnet.solana.com".to_string());
 
@@ -60,10 +63,17 @@ impl RollupDB {
                     }
                 }
                 // Send the locked account data back to the sequencer so it can process the transaction
-                log::info!("DB: Sending {} accounts to sequencer.", fetched_accounts_data.len());
-                account_sender.send(Some(fetched_accounts_data)).await.unwrap();
-            
-            } else if let (Some(tx), Some(new_data)) = (message.add_processed_transaction, message.add_new_data) {
+                log::info!(
+                    "DB: Sending {} accounts to sequencer.",
+                    fetched_accounts_data.len()
+                );
+                account_sender
+                    .send(Some(fetched_accounts_data))
+                    .await
+                    .unwrap();
+            } else if let (Some(tx), Some(new_data)) =
+                (message.add_processed_transaction, message.add_new_data)
+            {
                 // This part is already correct in your code.
                 log::info!("DB: Received processed transaction. Updating state.");
 
@@ -73,20 +83,40 @@ impl RollupDB {
                 for pubkey in tx.message.account_keys.iter() {
                     db.locked_accounts.remove(pubkey);
                 }
-                let tx_hash = solana_sdk::keccak::hashv(&[&tx.signatures[0].to_string().as_bytes()]);
+                let tx_hash =
+                    solana_sdk::keccak::hashv(&[&tx.signatures[0].to_string().as_bytes()]);
                 db.transactions.insert(tx_hash, tx);
-                log::info!("State update complete. Locked: {}, Unlocked: {}.", db.locked_accounts.len(), db.accounts_db.len());
-
+                log::info!(
+                    "State update complete. Locked: {}, Unlocked: {}.",
+                    db.locked_accounts.len(),
+                    db.accounts_db.len()
+                );
             } else if let Some(get_this_hash_tx) = message.frontend_get_tx {
-                log::info!("Received request from frontend for tx hash: {}", get_this_hash_tx);
+                log::info!(
+                    "Received request from frontend for tx hash: {}",
+                    get_this_hash_tx
+                );
+                log::info!("RollupDB: {:#?}", db.transactions);
                 if let Some(req_tx) = db.transactions.get(&get_this_hash_tx) {
                     log::info!("✅ Found transaction for hash: {}", get_this_hash_tx);
-                    frontend_sender.send(FrontendMessage {
-                        transaction: Some(req_tx.clone()),
-                        get_tx: None,
-                    }).await.unwrap();
+                    frontend_sender
+                        .send(FrontendMessage {
+                            transaction: Some(req_tx.clone()),
+                            get_tx: None,
+                            error: None,
+                        })
+                        .await
+                        .unwrap();
                 } else {
                     log::warn!("⚠️ No transaction found for hash: {}", get_this_hash_tx);
+                    frontend_sender
+                        .send(FrontendMessage {
+                            transaction: None,
+                            get_tx: None,
+                            error: Some("Transaction not found".to_string()),
+                        })
+                        .await
+                        .unwrap();
                 }
             }
         }

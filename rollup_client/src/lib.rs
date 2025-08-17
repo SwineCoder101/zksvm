@@ -33,7 +33,8 @@ pub async fn submit_transaction_to_rollup(
 ) -> Result<HashMap<String, String>> {
     let rollup_tx = RollupTransaction {
         sender: sender_name.to_string(),
-        sol_transaction: transaction,
+        sol_transaction: Some(transaction),
+        error: None
     };
 
     let response = client
