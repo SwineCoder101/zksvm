@@ -93,6 +93,8 @@ fn process_transaction_batch(
                     add_new_data: Some(new_data),
                     frontend_get_tx: None,
                     add_settle_proof: None,
+                    list_offset: None,
+                    list_limit: None,
                 })?;
             }
             Err(e) => {
@@ -143,6 +145,8 @@ pub async fn run(
                 add_new_data: None,
                 frontend_get_tx: None,
                 add_settle_proof: None,
+                list_offset: None,
+                list_limit: None,
             })?;
 
             if let Some(Some(accounts_data)) = account_receiver.recv().await.ok() {

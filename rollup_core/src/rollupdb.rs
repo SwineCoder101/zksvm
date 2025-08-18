@@ -1,21 +1,21 @@
-use async_channel::{Receiver, Sender};
+// src/rollupdb.rs
+use async_channel::{Receiver as AReceiver, Sender as ASender};
+use crossbeam::channel::Receiver as CBReceiver;
 use serde::{Deserialize, Serialize};
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     account::AccountSharedData, keccak::Hash, pubkey::Pubkey, transaction::Transaction,
 };
+use std::collections::HashMap;
 
-use crate::frontend::FrontendMessage;
-use crossbeam::channel::{Receiver as CBReceiver, Sender as CBSender};
-use solana_client::rpc_client::RpcClient;
-use std::{
-    collections::{HashMap, HashSet},
-    default,
-};
+use crate::frontend::{FrontendMessage, TransactionWithHash};
 
 pub struct RollupDBMessage {
     pub lock_accounts: Option<Vec<Pubkey>>,
     pub add_processed_transaction: Option<Transaction>,
     pub frontend_get_tx: Option<Hash>,
+    pub list_offset: Option<u64>,
+    pub list_limit: Option<u32>,
     pub add_settle_proof: Option<String>,
     pub add_new_data: Option<Vec<(Pubkey, AccountSharedData)>>,
 }
@@ -30,95 +30,114 @@ pub struct RollupDB {
 impl RollupDB {
     pub async fn run(
         rollup_db_receiver: CBReceiver<RollupDBMessage>,
-        frontend_sender: Sender<FrontendMessage>,
-        account_sender: Sender<Option<Vec<(Pubkey, AccountSharedData)>>>,
+        frontend_sender: ASender<FrontendMessage>,
+        account_sender: ASender<Option<Vec<(Pubkey, AccountSharedData)>>>,
     ) {
         let mut db = RollupDB::default();
+        let rpc_client = RpcClient::new("https://api.devnet.solana.com".to_string());
 
-        while let Ok(message) = rollup_db_receiver.recv() {
-            log::info!("RollupDB received a message");
-
-            if let Some(accounts_to_lock) = message.lock_accounts {
-                log::info!(
-                    "DB: Received request to lock and fetch {} accounts.",
-                    accounts_to_lock.len()
-                );
-                let mut fetched_accounts_data: Vec<(Pubkey, AccountSharedData)> = Vec::new();
-                let rpc_client = RpcClient::new("https://api.devnet.solana.com".to_string());
-
+        while let Ok(msg) = rollup_db_receiver.recv() {
+            // 1) Lock + fetch accounts (from cache or L1)
+            if let Some(accounts_to_lock) = msg.lock_accounts {
+                let mut fetched: Vec<(Pubkey, AccountSharedData)> = Vec::with_capacity(accounts_to_lock.len());
                 for pubkey in accounts_to_lock {
-                    // Try to get from local cache first. If it's not there, fetch from L1.
-                    let account_data = db.accounts_db.remove(&pubkey).or_else(|| {
-                        log::warn!("Account {} not in local DB, fetching from L1.", pubkey);
-                        rpc_client.get_account(&pubkey).ok().map(|acc| acc.into())
-                    });
-
-                    // If we successfully got the account data (from cache or L1), lock it.
-                    if let Some(data) = account_data {
-                        db.locked_accounts.insert(pubkey, data.clone());
-                        fetched_accounts_data.push((pubkey, data));
-                    } else {
-                        log::error!("FATAL: Could not load account {} from L1.", pubkey);
-                        // In a real system, you might need more robust error handling here.
+                    let acc = db
+                        .accounts_db
+                        .remove(&pubkey)
+                        .or_else(|| rpc_client.get_account(&pubkey).ok().map(Into::into));
+                    match acc {
+                        Some(data) => {
+                            db.locked_accounts.insert(pubkey, data.clone());
+                            fetched.push((pubkey, data));
+                        }
+                        None => {
+                            log::error!("Could not load account {} from L1 or cache", pubkey);
+                        }
                     }
                 }
-                // Send the locked account data back to the sequencer so it can process the transaction
-                log::info!(
-                    "DB: Sending {} accounts to sequencer.",
-                    fetched_accounts_data.len()
-                );
-                account_sender
-                    .send(Some(fetched_accounts_data))
-                    .await
-                    .unwrap();
-            } else if let (Some(tx), Some(new_data)) =
-                (message.add_processed_transaction, message.add_new_data)
-            {
-                // This part is already correct in your code.
-                log::info!("DB: Received processed transaction. Updating state.");
+                if let Err(e) = account_sender.send(Some(fetched)).await {
+                    log::error!("account_sender.send failed: {e}");
+                }
+                continue;
+            }
 
-                for (pubkey, account_data) in new_data {
-                    db.accounts_db.insert(pubkey, account_data);
+            // 2) Processed tx + new state data => update DB, unlock accounts, index tx by keccak(sig0)
+            if let (Some(tx), Some(new_data)) = (msg.add_processed_transaction, msg.add_new_data) {
+                for (pubkey, data) in new_data {
+                    db.accounts_db.insert(pubkey, data);
                 }
                 for pubkey in tx.message.account_keys.iter() {
                     db.locked_accounts.remove(pubkey);
                 }
-                let tx_hash =
-                    solana_sdk::keccak::hashv(&[&tx.signatures[0].to_string().as_bytes()]);
+                // Your convention: keccak(hashv) of signature string bytes
+                let tx_hash = solana_sdk::keccak::hashv(&[tx.signatures[0].to_string().as_bytes()]);
                 db.transactions.insert(tx_hash, tx);
-                log::info!(
-                    "State update complete. Locked: {}, Unlocked: {}.",
-                    db.locked_accounts.len(),
-                    db.accounts_db.len()
-                );
-            } else if let Some(get_this_hash_tx) = message.frontend_get_tx {
-                log::info!(
-                    "Received request from frontend for tx hash: {}",
-                    get_this_hash_tx
-                );
-                log::info!("RollupDB: {:#?}", db.transactions);
-                if let Some(req_tx) = db.transactions.get(&get_this_hash_tx) {
-                    log::info!("✅ Found transaction for hash: {}", get_this_hash_tx);
-                    frontend_sender
+                log::info!("{:#?}", db.transactions);
+                continue;
+            }
+
+            // 3) Single tx fetch
+            if let Some(wanted) = msg.frontend_get_tx {
+                if let Some(tx) = db.transactions.get(&wanted) {
+                    let _ = frontend_sender
                         .send(FrontendMessage {
-                            transaction: Some(req_tx.clone()),
-                            get_tx: None,
+                            get_tx: Some(wanted),
+                            transaction: Some(tx.clone()),
+                            transactions: None,
+                            total: None,
+                            has_more: None,
                             error: None,
                         })
-                        .await
-                        .unwrap();
+                        .await;
                 } else {
-                    log::warn!("⚠️ No transaction found for hash: {}", get_this_hash_tx);
-                    frontend_sender
+                    let _ = frontend_sender
                         .send(FrontendMessage {
+                            get_tx: Some(wanted),
                             transaction: None,
-                            get_tx: None,
+                            transactions: None,
+                            total: None,
+                            has_more: None,
                             error: Some("Transaction not found".to_string()),
                         })
-                        .await
-                        .unwrap();
+                        .await;
                 }
+                continue;
             }
+
+            // 4) List mode with pagination
+            //    Deterministic order: sort by hash (desc). If you have a timestamp, sort by that instead.
+            let mut keys: Vec<Hash> = db.transactions.keys().cloned().collect();
+            keys.sort_by(|a, b| b.to_string().cmp(&a.to_string())); // descending
+
+            let total = keys.len() as u64;
+            let offset = msg.list_offset.unwrap_or(0);
+            let limit = msg.list_limit.unwrap_or(50).clamp(1, 500) as usize;
+
+            let start = offset.min(total) as usize;
+            let end = (start + limit).min(total as usize);
+            let window = &keys[start..end];
+
+            let txs: Vec<TransactionWithHash> = window
+                .iter()
+                .filter_map(|h| db.transactions.get(h).map(|tx| (h, tx)))
+                .map(|(h, tx)| TransactionWithHash {
+                    hash: h.to_string(),
+                    transaction: tx.clone(),
+                })
+                .collect();
+
+            let has_more = (end as u64) < total;
+
+            let _ = frontend_sender
+                .send(FrontendMessage {
+                    get_tx: None,
+                    transaction: None,
+                    transactions: Some(txs),
+                    total: Some(total),
+                    has_more: Some(has_more),
+                    error: None,
+                })
+                .await;
         }
     }
 }
