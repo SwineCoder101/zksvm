@@ -1,17 +1,27 @@
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Result};
 use reqwest::Client;
+use std::collections::HashMap;
 
-use solana_client::nonblocking::rpc_client::RpcClient;
+use rollup_core::frontend::{RollupTransaction, TransactionWithHash};
 use solana_sdk::{
     hash::Hash,
-    native_token::LAMPORTS_PER_SOL,
+    keccak,
     signature::{Keypair, Signer},
     system_instruction,
     transaction::Transaction,
 };
-use std::collections::HashMap;
-use rollup_core::frontend::RollupTransaction;
 
+/// List response (matches server's paginated JSON)
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct RollupTransactionsList {
+    pub sender: Option<String>,
+    pub transactions: Vec<TransactionWithHash>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: Option<u64>,
+    pub has_more: bool,
+    pub error: Option<String>,
+}
 
 /// Create a Solana transaction for testing/demonstration
 pub fn create_solana_transaction(
@@ -28,63 +38,76 @@ pub fn create_solana_transaction(
 pub async fn submit_transaction_to_rollup(
     client: &Client,
     base_url: &str,
-    sender_name: &str,
+    sender_name: Option<&str>,
     transaction: Transaction,
 ) -> Result<HashMap<String, String>> {
     let rollup_tx = RollupTransaction {
-        sender: sender_name.to_string(),
+        sender: sender_name.map(|s| s.to_string()),
         sol_transaction: Some(transaction),
-        error: None
+        error: None,
     };
 
     let response = client
-        .post(&format!("{}/submit_transaction", base_url))
+        .post(&format!("{}/submit_transaction", base_url.trim_end_matches('/')))
         .json(&rollup_tx)
         .send()
         .await?
+        .error_for_status()? // surface non-2xx as Err
         .json::<HashMap<String, String>>()
         .await?;
 
     Ok(response)
 }
 
-/// Calculate the keccak hash of a transaction signature for lookup
+/// Calculate the keccak hash of a transaction signature for lookup (string form)
 pub fn calculate_signature_hash(signature: &str) -> String {
-    solana_sdk::keccak::hashv(&[signature.as_bytes()]).to_string()
+    keccak::hashv(&[signature.as_bytes()]).to_string()
 }
 
-/// Get a transaction from the rollup server using its signature hash
+/// Get a single transaction from the rollup server using its signature hash
 pub async fn get_transaction_from_rollup(
     client: &Client,
     base_url: &str,
     signature_hash: &str,
 ) -> Result<RollupTransaction> {
-    let get_request = HashMap::from([("get_tx", signature_hash.to_string())]);
+    // server expects: { "get_tx": "<hash>" }
+    let get_request = serde_json::json!({ "get_tx": signature_hash });
 
-    let response = client
-        .post(&format!("{}/get_transaction", base_url))
+    let resp = client
+        .post(&format!("{}/get_transaction", base_url.trim_end_matches('/')))
         .json(&get_request)
         .send()
         .await?
+        .error_for_status()?
         .json::<RollupTransaction>()
         .await?;
 
-    Ok(response)
+    Ok(resp)
 }
 
-/// Perform a health check on the rollup server
-pub async fn health_check(client: &Client, base_url: &str) -> Result<HashMap<String, String>> {
-    let response = client
-        .get(&format!("{}/", base_url))
+/// Get one page of transactions from the rollup server (paginated)
+pub async fn get_transactions_page_from_rollup(
+    client: &Client,
+    base_url: &str,
+    page: u32,
+    per_page: u32,
+) -> Result<RollupTransactionsList> {
+    // server expects: { "page": <u32>, "per_page": <u32> } with no get_tx
+    let get_request = serde_json::json!({ "page": page, "per_page": per_page });
+
+    let resp = client
+        .post(&format!("{}/get_transaction", base_url.trim_end_matches('/')))
+        .json(&get_request)
         .send()
         .await?
-        .json::<HashMap<String, String>>()
+        .error_for_status()?
+        .json::<RollupTransactionsList>()
         .await?;
 
-    Ok(response)
+    Ok(resp)
 }
 
-/// Create a complete rollup client for interacting with the server
+/// Simple rollup client wrapper
 pub struct RollupClient {
     client: Client,
     base_url: String,
@@ -92,25 +115,61 @@ pub struct RollupClient {
 
 impl RollupClient {
     pub fn new(base_url: String) -> Self {
-        Self {
-            client: Client::new(),
-            base_url,
-        }
+        Self { client: Client::new(), base_url }
     }
 
-    pub async fn health_check(&self) -> Result<HashMap<String, String>> {
-        health_check(&self.client, &self.base_url).await
-    }
+pub async fn health_check(&self) -> Result<HashMap<String, String>> {
+    let url = format!("{}/", self.base_url.trim_end_matches('/'));
+    let resp = self.client.get(&url).send().await?.error_for_status()?;
+    let map = resp.json::<HashMap<String, String>>().await?;
+    Ok(map)
+}
+
+
 
     pub async fn submit_transaction(
         &self,
-        sender_name: &str,
+        sender_name: Option<&str>,
         transaction: Transaction,
     ) -> Result<HashMap<String, String>> {
         submit_transaction_to_rollup(&self.client, &self.base_url, sender_name, transaction).await
     }
 
+    /// Fetch a single tx by its signature-hash
     pub async fn get_transaction(&self, signature_hash: &str) -> Result<RollupTransaction> {
         get_transaction_from_rollup(&self.client, &self.base_url, signature_hash).await
+    }
+
+    /// Fetch one page (paginated)
+    pub async fn get_transactions_page(
+        &self,
+        page: u32,
+        per_page: u32,
+    ) -> Result<RollupTransactionsList> {
+        get_transactions_page_from_rollup(&self.client, &self.base_url, page, per_page).await
+    }
+
+    /// Convenience: fetch **all pages** (beware of large datasets)
+    pub async fn get_all_transactions_paged(&self, per_page: u32) -> Result<Vec<TransactionWithHash>> {
+        let per_page = per_page.clamp(1, 500);
+        let mut page = 1;
+        let mut out = Vec::new();
+
+        loop {
+            let resp = self.get_transactions_page(page, per_page).await?;
+            if let Some(err) = &resp.error {
+                // Early return on backend error
+                return Err(anyhow!("Backend error on page {}: {}", page, err));
+            }
+
+            out.extend(resp.transactions.into_iter());
+
+            if !resp.has_more {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(out)
     }
 }
