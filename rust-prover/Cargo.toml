@@ -3,6 +3,10 @@ name = "zk"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "snarkjs"
+path = "src/snarkjs.rs"
+
 [dependencies]
 ark-std = { version = "0.5", features = ["std"] }
 ark-ff = "0.5"
