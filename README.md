@@ -1,4 +1,4 @@
-![Zelana Logo](assets/logo/zelana-logo-white-bg.png)
+<img src="assets/logo/zelana-logo-white-bg.png" alt="Zelana Logo" width="200"/>
 # ZKSVM Rollup
 
 A general-purpose zero-knowledge rollup built on Solana's SVM (Solana Virtual Machine) for generating and verifying cryptographic proofs on-chain.
