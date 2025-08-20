@@ -1,3 +1,5 @@
+<img src="assets/logo/zelana-logo-white-bg.png" alt="Zelana Logo" width="200"/>
+
 # ZKSVM Rollup
 
 A general-purpose zero-knowledge rollup built on Solana's SVM (Solana Virtual Machine) for generating and verifying cryptographic proofs on-chain.
@@ -7,6 +9,8 @@ A general-purpose zero-knowledge rollup built on Solana's SVM (Solana Virtual Ma
 ZKSVM is a research-oriented rollup implementation that leverages Solana's SVM API to create a scalable, proof-generating rollup system. The project focuses on benchmarking zero-knowledge proofs (SNARKs) on SVM as part of ongoing research into efficient blockchain scaling solutions.
 
 ## Architecture
+
+![Zelana Diagram](assets/images/zksvm-diagram.png)
 
 The rollup consists of two main components:
 
