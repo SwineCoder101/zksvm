@@ -2,7 +2,7 @@
 name = "rollup_core"
 version = "0.1.0"
 edition = "2021"
-authors = [ "bheeeet" ]
+authors = [ "bheeeet", "swinecoder101", "donjne", "moses7054", "jeevan4476" ]
 
 [dependencies]
 actix-web = "4.9.0"

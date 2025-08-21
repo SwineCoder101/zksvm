@@ -21,3 +21,16 @@ Cargo.lock
 .idea/
 
 .env
+circuit/build/
+build/
+*.r1cs
+*.sym
+*.wasm
+*.wtns
+*.ptau
+*.zkey
+keys/
+pot*
+proof*.json
+pubic*.json
+witness*.json
