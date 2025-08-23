@@ -20,4 +20,18 @@ Cargo.lock
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
+node_modules/
 .env
+.next
+./rollup_web/node_modules
+./rollup_web/.next
+
+./onchain_verifier/.anchor
+./onchain_verifier/target
+./onchain_verifier/node_modules
+./onchain_verifier/.next
+./onchain_verifier/.DS_Store
+./onchain_verifier/test-ledger
+./onchain_verifier/.yarn
+./onchain_verifier/.anchor
+./onchain_verifier/test-ledger

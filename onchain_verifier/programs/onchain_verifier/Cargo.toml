@@ -1,0 +1,25 @@
+[package]
+name = "onchain_verifier"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "onchain_verifier"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+client = []
+
+
+[dependencies]
+anchor-lang = "0.31.0"
+hex-literal = "0.4.1"
+solana-bn254 = "3.0.0"
+
