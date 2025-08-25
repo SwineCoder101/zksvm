@@ -20,7 +20,6 @@ Cargo.lock
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
-.env
 circuit/build/
 build/
 *.r1cs
@@ -34,3 +33,19 @@ pot*
 proof*.json
 pubic*.json
 witness*.json
+node_modules/
+.env
+.next
+./rollup_web/node_modules
+./rollup_web/.next
+
+
+./onchain_verifier/target
+./onchain_verifier/node_modules
+./onchain_verifier/.next
+./onchain_verifier/.DS_Store
+
+./onchain_verifier/.yarn
+
+./onchain_verifier/test-ledger
+
