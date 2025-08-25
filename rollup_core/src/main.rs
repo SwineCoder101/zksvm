@@ -5,7 +5,8 @@ use async_channel;
 use crossbeam;
 use frontend::FrontendMessage;
 use rollupdb::{RollupDB, RollupDBMessage};
-use solana_sdk::{account::AccountSharedData, hash::Hash, pubkey::Pubkey, transaction::Transaction};
+use settle::SettlementJob;
+use solana_sdk::{account::AccountSharedData, pubkey::Pubkey, transaction::Transaction};
 use tokio::{join, runtime::Builder};
 mod frontend;
 mod processor;
@@ -13,10 +14,6 @@ mod rollupdb;
 mod sequencer;
 mod settle;
 mod loader;
-
-pub struct SettlementJob {
-    pub proof_hash: Hash,
-}
 
 // #[actix_web::main]
 fn main() {
@@ -36,22 +33,16 @@ fn main() {
 
 
 
+    let db_sender_for_settlement = rollupdb_sender.clone(); 
     let settler_handle = thread::spawn(move || {
-        log::info!("Settlement thread started.");
-        // The settler thread has its own dedicated Tokio runtime.
+        log::info!("Settlement worker started.");
         let rt = Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
 
         rt.block_on(async move {
-            while let Ok(job) = settler_reciever.recv() {
-                log::info!("Settler received a new job. Submitting to L1...");
-                match settle::settle_state(job.proof_hash).await {
-                    Ok(hash) => log::info!("Settlement successful. Signature: {}", hash),
-                    Err(e) => log::error!("Settlement failed: {}", e),
-                }
-            }
+            settle::run_settlement_worker(settler_reciever, db_sender_for_settlement).await.unwrap();
         });
     });
 
