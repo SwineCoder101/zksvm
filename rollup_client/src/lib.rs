@@ -1,13 +1,12 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use std::collections::HashMap;
-
+use solana_system_interface::instruction as system_instruction;
 use rollup_core::frontend::{RollupTransaction, TransactionWithHash};
 use solana_sdk::{
     hash::Hash,
     keccak,
     signature::{Keypair, Signer},
-    system_instruction,
     transaction::Transaction,
 };
 

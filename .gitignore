@@ -22,6 +22,19 @@ Cargo.lock
 
 node_modules/
 .env
+circuit/build/
+build/
+*.r1cs
+*.sym
+*.wasm
+*.wtns
+*.ptau
+*.zkey
+keys/
+pot*
+proof*.json
+pubic*.json
+witness*.json
 .next
 ./rollup_web/node_modules
 ./rollup_web/.next

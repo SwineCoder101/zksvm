@@ -6,10 +6,15 @@ use crossbeam::channel::Sender as CBSender;
 use serde::{Deserialize, Serialize};
 use solana_sdk::{keccak::Hash, transaction::Transaction};
 use tokio::time::timeout;
+use solana_client::nonblocking::rpc_client::RpcClient; 
+use solana_sdk::{
+    message::Message,
+    signature::Signer,
+    commitment_config::CommitmentConfig,
+};
+use solana_system_interface::instruction as system_instruction;
 
 use crate::rollupdb::RollupDBMessage;
-
-// === Types ===
 
 pub struct FrontendMessage {
     pub get_tx: Option<Hash>,
@@ -53,8 +58,6 @@ pub struct RollupTransactionsList {
     pub error: Option<String>,
 }
 
-// === Helpers ===
-
 async fn recv_once<T>(rx: &Receiver<T>, dur: Duration) -> Option<T> {
     timeout(dur, rx.recv()).await.ok().and_then(Result::ok)
 }
@@ -67,28 +70,69 @@ fn err_json(msg: &str) -> actix_web::Result<HttpResponse> {
     ok_json(HashMap::from([("error", msg)]))
 }
 
-// === Handlers ===
-
 pub async fn submit_transaction(
     body: web::Json<RollupTransaction>,
     sequencer_sender: web::Data<CBSender<Transaction>>,
 ) -> actix_web::Result<impl Responder> {
-    log::info!("Submitted transaction: {:?}", body);
+    log::info!("Submitted transaction");
+    log::info!("Json({:?})", body);
 
     match body.sol_transaction.clone() {
         Some(tx) => {
-            if let Err(e) = sequencer_sender.send(tx) {
-                log::error!("Failed to enqueue tx: {e}");
-                return err_json("Failed to enqueue transaction");
+            match sequencer_sender.send(tx) {
+                Ok(_) => Ok(HttpResponse::Ok().json(HashMap::from([("Transaction status", "Submitted")]))),
+                Err(e) => {
+                    log::error!("Failed to send transaction to sequencer: {}", e);
+                    Ok(HttpResponse::InternalServerError().json(HashMap::from([
+                        ("error", "Failed to submit transaction to sequencer")
+                    ])))
+                }
             }
-            ok_json(HashMap::from([("Transaction status", "Submitted")]))
         }
         None => {
-            log::warn!("Submit request missing sol_transaction");
-            Ok(HttpResponse::BadRequest()
-                .json(HashMap::from([("error", "Missing sol_transaction")])))
+            log::info!("Creating test transaction for testing");
+            let sender_name = body.sender.as_deref().unwrap_or("unknown");
+            match create_test_transaction(sender_name).await {
+                Ok(dummy_tx) => {
+                    sequencer_sender.send(dummy_tx).unwrap();
+                    Ok(HttpResponse::Ok().json(HashMap::from([("Transaction status", "Submitted (test)")])))
+                }
+                Err(e) => {
+                    log::error!("Failed to create test transaction: {}", e);
+                    Ok(HttpResponse::BadRequest().json(HashMap::from([("error", format!("Failed to create transaction: {}", e))])))
+                }
+            }
         }
     }
+}
+
+async fn create_test_transaction(_sender: &str) -> Result<Transaction, Box<dyn std::error::Error>> {
+    let keypair_path = std::env::var("KEYPAIR2")
+        .unwrap_or_else(|_| format!("{}/.config/solana/id.json", std::env::var("HOME").unwrap()));
+    
+    let payer = solana_sdk::signer::keypair::read_keypair_file(&keypair_path)?;
+
+    let rpc_client = RpcClient::new_with_commitment(
+        "https://api.devnet.solana.com".to_string(),
+        CommitmentConfig::confirmed(),
+    );
+
+    let recent_blockhash = rpc_client.get_latest_blockhash().await?;
+    
+    log::info!("Creating test transaction: {} SOL transfer from {} to themselves", 0.001, payer.pubkey());
+    
+    let instruction = system_instruction::transfer(
+        &payer.pubkey(),
+        &payer.pubkey(), 
+        1_000_000, 
+    );
+    
+    let message = Message::new(&[instruction], Some(&payer.pubkey()));
+    
+    let mut transaction = Transaction::new_unsigned(message);
+    transaction.sign(&[&payer], recent_blockhash);
+    
+    Ok(transaction)
 }
 
 pub async fn get_transaction(
@@ -114,8 +158,14 @@ pub async fn get_transaction(
             frontend_get_tx: Some(wanted_hash),
             add_settle_proof: None,
             add_new_data: None,
+            store_batch_proof: None,
+            update_proof_status: None,
+            get_proof_by_batch_id: None,
+            get_unsettled_proofs: None,
+            retry_failed_proofs: None,
             list_offset: None,
             list_limit: None,
+            trigger_retry_cycle: None,
         }) {
             log::error!("Failed to request specific tx: {e}");
             return err_json("Backend request failed");
@@ -160,8 +210,14 @@ pub async fn get_transaction(
         frontend_get_tx: None, // list mode
         add_settle_proof: None,
         add_new_data: None,
+        store_batch_proof: None,
+        update_proof_status: None,
+        get_proof_by_batch_id: None,
+        get_unsettled_proofs: None,
+        retry_failed_proofs: None,
         list_offset: Some(offset),
         list_limit: Some(per_page),
+        trigger_retry_cycle: None,
     }) {
         log::error!("Failed to request paged list from RollupDB: {e}");
         return ok_json(RollupTransactionsList {
@@ -204,8 +260,6 @@ pub async fn get_transaction(
             });
         }
     }
-
-    // Timeout / no response
     ok_json(RollupTransactionsList {
         sender: None,
         transactions: vec![],

@@ -1,7 +1,7 @@
 use {
     solana_client::rpc_client::RpcClient,
     solana_sdk::{
-        account::{Account, AccountSharedData, ReadableAccount},
+        account::{AccountSharedData, ReadableAccount},
         pubkey::Pubkey,
     },
     solana_svm::transaction_processing_callback::TransactionProcessingCallback,

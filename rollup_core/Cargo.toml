@@ -2,7 +2,7 @@
 name = "rollup_core"
 version = "0.1.0"
 edition = "2021"
-authors = [ "bheeeet" ]
+authors = [ "bheeeet", "swinecoder101", "donjne", "moses7054", "jeevan4476" ]
 
 [dependencies]
 actix-web = "4.9.0"
@@ -27,3 +27,4 @@ solana-fee-structure = "2.3.0"
 solana-sdk-ids = "2.2.1"
 solana-system-interface = "1.0.0"
 dotenvy = "0.15"
+tokio-util = "0.7"
