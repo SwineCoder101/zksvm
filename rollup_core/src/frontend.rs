@@ -1,4 +1,5 @@
 use std::{collections::HashMap, str::FromStr, time::Duration};
+use base64::Engine;
 
 use actix_web::{error, web, HttpResponse, Responder};
 use async_channel::Receiver;
@@ -37,7 +38,14 @@ pub struct GetTransaction {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RollupTransaction {
     pub sender: Option<String>,
-    pub sol_transaction: Option<Transaction>,
+    pub sol_transaction: Option<String>, // Changed to String for base64 input
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RollupTransactionResponse {
+    pub sender: Option<String>,
+    pub sol_transaction: Option<Transaction>, // Keep Transaction for responses
     pub error: Option<String>,
 }
 
@@ -78,13 +86,34 @@ pub async fn submit_transaction(
     log::info!("Json({:?})", body);
 
     match body.sol_transaction.clone() {
-        Some(tx) => {
-            match sequencer_sender.send(tx) {
-                Ok(_) => Ok(HttpResponse::Ok().json(HashMap::from([("Transaction status", "Submitted")]))),
+        Some(tx_base64) => {
+            // Decode base64 string to Transaction
+            match base64::engine::general_purpose::STANDARD.decode(&tx_base64) {
+                Ok(tx_bytes) => {
+                    match bincode::deserialize::<Transaction>(&tx_bytes) {
+                        Ok(tx) => {
+                            match sequencer_sender.send(tx) {
+                                Ok(_) => Ok(HttpResponse::Ok().json(HashMap::from([("Transaction status", "Submitted")]))),
+                                Err(e) => {
+                                    log::error!("Failed to send transaction to sequencer: {}", e);
+                                    Ok(HttpResponse::InternalServerError().json(HashMap::from([
+                                        ("error", "Failed to submit transaction to sequencer")
+                                    ])))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to deserialize transaction: {}", e);
+                            Ok(HttpResponse::BadRequest().json(HashMap::from([
+                                ("error", "Invalid transaction format")
+                            ])))
+                        }
+                    }
+                }
                 Err(e) => {
-                    log::error!("Failed to send transaction to sequencer: {}", e);
-                    Ok(HttpResponse::InternalServerError().json(HashMap::from([
-                        ("error", "Failed to submit transaction to sequencer")
+                    log::error!("Failed to decode base64 transaction: {}", e);
+                    Ok(HttpResponse::BadRequest().json(HashMap::from([
+                        ("error", "Invalid base64 transaction")
                     ])))
                 }
             }
@@ -181,13 +210,13 @@ pub async fn get_transaction(
                     .map(|k| k.to_string())
                     .unwrap_or_else(|| "unknown".into());
 
-                return ok_json(RollupTransaction {
+                return ok_json(RollupTransactionResponse {
                     sender: Some(sender),
                     sol_transaction: Some(tx), // raw tx
                     error: None,
                 });
             } else if let Some(err) = frontend_message.error {
-                return ok_json(RollupTransaction {
+                return ok_json(RollupTransactionResponse {
                     sender: None,
                     sol_transaction: None,
                     error: Some(err),
