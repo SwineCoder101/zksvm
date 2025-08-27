@@ -1,6 +1,7 @@
 use std::thread;
 
 use actix_web::{web, App, HttpServer};
+use actix_cors::Cors;
 use async_channel;
 use crossbeam;
 use frontend::FrontendMessage;
@@ -203,6 +204,13 @@ fn main() {
         rt2.block_on(async {
             let server = HttpServer::new(move || {
                 App::new()
+                    .wrap(
+                        Cors::default()
+                            .allowed_origin("http://localhost:3000")
+                            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+                            .allowed_headers(vec!["Content-Type", "Authorization"])
+                            .max_age(3600)
+                    )
                     .app_data(web::Data::new(sequencer_sender.clone()))
                     .app_data(web::Data::new(rollupdb_sender.clone()))
                     .app_data(web::Data::new(frontend_sender.clone()))
